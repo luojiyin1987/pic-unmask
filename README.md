@@ -2,6 +2,8 @@
 
 Browser-side image inpainting with React, Vite, `onnxruntime-web`, and Cloudflare Pages.
 
+Large uploads keep their original output resolution. The app now runs inference on a mask-guided `512x512` crop patch and composites the generated patch back onto the full-size image in the browser.
+
 ## Run
 
 ```bash
