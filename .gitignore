@@ -8,7 +8,6 @@ dist
 dist-ssr
 *.local
 public/models/*.onnx
-public/ort/
 
 # Editor directories and files
 .vscode/*

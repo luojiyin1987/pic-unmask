@@ -4,6 +4,7 @@ import { detectBackend } from '../lib/ort-env'
 let session: ort.InferenceSession | null = null
 let currentModelUrl = ''
 const MODEL_CACHE_NAME = 'migan-model-cache-v2'
+const ORT_WASM_CDN_FALLBACK = 'https://unpkg.com/onnxruntime-web@1.18.0/dist/'
 
 type InferMessage = {
   type: 'INFER'
@@ -293,6 +294,38 @@ const loadModelBuffer = async (modelUrl: string): Promise<ArrayBuffer> => {
   }
 }
 
+const getWasmPathCandidates = (wasmBaseUrl: string): string[] => {
+  const candidates = [resolveAbsoluteUrl(wasmBaseUrl), ORT_WASM_CDN_FALLBACK]
+  return [...new Set(candidates)]
+}
+
+const createSessionWithWasmFallback = async (
+  modelBuffer: ArrayBuffer,
+  executionProviders: ort.InferenceSession.SessionOptions['executionProviders'],
+  wasmBaseUrl: string,
+): Promise<ort.InferenceSession> => {
+  let lastError: unknown
+
+  for (const wasmBase of getWasmPathCandidates(wasmBaseUrl)) {
+    try {
+      postStatus(`Loading ONNX Runtime from ${new URL(wasmBase).host}...`)
+      ort.env.wasm.wasmPaths = {
+        wasm: new URL('ort-wasm-simd-threaded.jsep.wasm', wasmBase).toString(),
+        mjs: new URL('ort-wasm-simd-threaded.jsep.mjs', wasmBase).toString(),
+      }
+
+      return await ort.InferenceSession.create(modelBuffer, {
+        executionProviders,
+        graphOptimizationLevel: 'all',
+      })
+    } catch (error) {
+      lastError = error
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError))
+}
+
 const createSingleInputTensor = (meta: TensorMeta, image: Uint8Array, masked: Uint8Array, width: number, height: number) => {
   const shape = toConcreteShape(meta.shape, width, height)
   const channels = getChannelCount(shape)
@@ -456,21 +489,17 @@ self.onmessage = async (event: MessageEvent<InferMessage>) => {
   try {
     postStatus('Initializing ONNX Runtime...')
 
-    const wasmBase = resolveAbsoluteUrl(wasmBaseUrl)
-    ort.env.wasm.wasmPaths = {
-      wasm: new URL('ort-wasm-simd-threaded.jsep.wasm', wasmBase).toString(),
-      mjs: new URL('ort-wasm-simd-threaded.jsep.mjs', wasmBase).toString(),
-    }
     ort.env.wasm.numThreads = 4
 
     if (!session || currentModelUrl !== modelUrl) {
       postStatus('Loading model...')
       const backends = await detectBackend()
       const modelBuffer = await loadModelBuffer(modelUrl)
-      session = await ort.InferenceSession.create(modelBuffer, {
-        executionProviders: backends as ort.InferenceSession.SessionOptions['executionProviders'],
-        graphOptimizationLevel: 'all',
-      })
+      session = await createSessionWithWasmFallback(
+        modelBuffer,
+        backends as ort.InferenceSession.SessionOptions['executionProviders'],
+        wasmBaseUrl,
+      )
       currentModelUrl = modelUrl
       postStatus(`Model loaded (${session.inputNames.join(', ')} -> ${session.outputNames.join(', ')})`)
     }

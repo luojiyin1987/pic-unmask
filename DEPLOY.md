@@ -20,7 +20,7 @@ https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onn
 
 ### 方案 B: 模型放 R2
 
-`migan-fp16.onnx` 常见分发版本约 **29.5 MiB**，超过 Cloudflare Pages 单个静态文件 **25 MiB** 上限，所以推荐把模型放 R2，只把前端和 ORT wasm 部署到 Pages。
+`migan-fp16.onnx` 常见分发版本约 **29.5 MiB**，超过 Cloudflare Pages 单个静态文件 **25 MiB** 上限，所以推荐把模型放 R2。ORT wasm 则默认走公网 CDN。
 
 ```bash
 # 创建 R2 bucket 存放模型
@@ -50,6 +50,7 @@ public/models/migan-fp16.onnx
 cp .env.example .env
 # 默认可不改。
 # 如果模型放 R2，把 VITE_MODEL_URL 改成你的 R2 Custom Domain URL。
+# 如果你想改 ORT wasm 来源，可覆写 VITE_WASM_BASE_URL。
 ```
 
 ## 3. 本地开发
@@ -60,7 +61,6 @@ npm run dev
 ```
 
 开发服务器会自动加上 `Cross-Origin-Embedder-Policy: require-corp`，以支持 WASM SharedArrayBuffer 多线程。
-同时 `npm run dev` 会自动把 ORT 所需的 `.mjs/.wasm` 文件同步到 `public/ort/`。
 
 ## 4. 构建
 
@@ -70,8 +70,8 @@ npm run build
 
 构建产物输出到 `dist/`：
 - 包含 `public/_headers`
-- 包含 `public/ort/` 下的 ONNX Runtime `.mjs/.wasm`
 - 主包约 150KB
+- 不再包含 ORT 的大 wasm 资源；它们默认从 jsDelivr 拉取，失败时回退到 unpkg
 
 ## 5. 部署到 Cloudflare Pages
 
@@ -99,7 +99,7 @@ Pages 侧的静态响应头通过 `public/_headers` 提供：
 
 这确保了：
 1. `SharedArrayBuffer` 可用（WASM 多线程必需）
-2. 与 Hugging Face 或 R2 的跨域请求需要远端允许 `Access-Control-Allow-Origin`
+2. 与 Hugging Face、jsDelivr / unpkg 或 R2 的跨域请求需要远端允许 `Access-Control-Allow-Origin`
 
 ## 7. 模型输入输出适配
 
@@ -117,10 +117,11 @@ Pages 侧的静态响应头通过 `public/_headers` 提供：
 ## 8. 性能提示
 
 - **WebGPU**: 首次加载模型时可能需要几秒编译 shader；后续同 session 推理很快。
-- **WASM fallback**: 在不支持 WebGPU 的浏览器上自动回退；首次也会编译 WASM，建议添加加载指示器。
+- **WASM fallback**: 在不支持 WebGPU 的浏览器上自动回退；首次也会下载并编译 CDN 上的 WASM，建议添加加载指示器。
 - **FP16**: WebGPU 路径天然支持 FP16；WASM 路径 FP16 会以 FP32 模拟或依赖 WASM SIMD，速度会慢一些。
 
 ## 9. 已知限制
 
 - Pages Functions 有 50MB 内存限制，但模型在浏览器端运行，不经过 Pages Function。
 - Pages 单文件上限是 25 MiB；29.5 MiB 的 `migan.onnx` 不适合直接作为 Pages 静态文件发布。
+- `ort-wasm-simd-threaded.jsep.wasm` 也超过 25 MiB，因此默认不作为 Pages 静态文件随站点发布。

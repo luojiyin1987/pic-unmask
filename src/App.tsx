@@ -4,8 +4,9 @@ import MaskEditor from './components/MaskEditor'
 import ResultViewer from './components/ResultViewer'
 
 const DEFAULT_MODEL_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx'
+const DEFAULT_WASM_BASE_URL = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/'
 const MODEL_URL = import.meta.env.VITE_MODEL_URL || DEFAULT_MODEL_URL
-const WASM_BASE_URL = new URL(import.meta.env.VITE_WASM_BASE_URL || '/ort/', window.location.href).toString()
+const WASM_BASE_URL = new URL(import.meta.env.VITE_WASM_BASE_URL || DEFAULT_WASM_BASE_URL, window.location.href).toString()
 
 type WorkerMessage =
   | { type: 'RESULT'; imageData: ImageData }

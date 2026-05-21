@@ -40,8 +40,7 @@ User Browser
 .
 ├── public/
 │   ├── _headers                 # Pages 静态响应头
-│   ├── models/                  # 可选：本地调试用模型占位目录
-│   └── ort/                     # ONNX Runtime wasm/mjs 运行时文件
+│   └── models/                  # 可选：本地调试用模型占位目录
 ├── src/
 │   ├── components/
 │   │   ├── UploadPanel.tsx
@@ -67,7 +66,7 @@ Cloudflare Pages 的免费/Pro 计划对单个文件大小有限制（通过 Fun
 1. **默认从 Hugging Face 公开直链加载模型**，零额外托管配置即可部署。
 2. **大于 25 MiB 的模型可放 R2 bucket**，通过 Custom Domain 或 Public Access 提供。
 3. **应用启动后懒加载模型**，可通过 `VITE_MODEL_URL` 切换到 Hugging Face、R2 或自有 CDN。
-4. **ORT WASM 文件随前端一起部署到 Pages**，通过 `public/ort/` 提供，并在 Worker 中用 `ort.env.wasm.wasmPaths` 显式指定。
+4. **ORT WASM 文件默认从公网 CDN 加载**，优先 `jsDelivr`，失败时回退 `unpkg`，并在 Worker 中用 `ort.env.wasm.wasmPaths` 显式指定。
 
 ## 5. 输入输出规范 (512×512)
 
@@ -105,7 +104,7 @@ Worker 内完成：
 
 - 使用 `wrangler pages project create` 或直接 Git 集成。
 - `vite.config.ts` 中需配置 `base: './'` 或具体路径，确保相对路径正确。
-- WASM 文件不作为内联资源，需通过 `public/` 或外部 R2 提供；Vite 的 `assetsInlineLimit` 设为 0 避免 base64 化大 wasm。
+- WASM 文件默认不随 Pages 产物发布，而是通过 CDN 提供；Vite 的 `assetsInlineLimit` 设为 0 避免意外内联大资源。
 
 ## 9. 安全与性能
 

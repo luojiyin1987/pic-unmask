@@ -4,9 +4,8 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "sync:ort": "node scripts/sync-ort-wasm.mjs",
-    "dev": "npm run sync:ort && vite",
-    "build": "npm run sync:ort && tsc && vite build",
+    "dev": "vite",
+    "build": "tsc && vite build",
     "preview": "vite preview",
     "pages:dev": "wrangler pages dev dist",
     "pages:deploy": "wrangler pages deploy dist"
