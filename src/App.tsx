@@ -120,9 +120,12 @@ export default function App() {
     setStatusType('ready')
   }, [t])
 
-  const toggleLang = useCallback(() => {
-    setLang(lang === 'en' ? 'zh' : 'en')
-  }, [lang, setLang])
+  const switchLang = useCallback(
+    (next: 'en' | 'zh') => {
+      if (next !== lang) setLang(next)
+    },
+    [lang, setLang]
+  )
 
   const STEPS = [
     { id: 0, label: t('stepUpload'), key: 'upload' },
@@ -145,9 +148,21 @@ export default function App() {
           </div>
           <div className="app-meta">
             <span className={`status-badge ${statusType}`}>{status}</span>
-            <button className="btn btn-ghost lang-btn" onClick={toggleLang} title="Switch language">
-              {lang === 'en' ? '中文' : 'English'}
-            </button>
+            <div className="lang-switcher">
+              <button
+                className={`lang-btn ${lang === 'zh' ? 'lang-active' : ''}`}
+                onClick={() => switchLang('zh')}
+              >
+                中文
+              </button>
+              <span className="lang-divider" />
+              <button
+                className={`lang-btn ${lang === 'en' ? 'lang-active' : ''}`}
+                onClick={() => switchLang('en')}
+              >
+                English
+              </button>
+            </div>
             {resultUrl && (
               <button className="btn btn-ghost" onClick={handleReset} title="Start over">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -309,11 +324,41 @@ export default function App() {
           align-items: center;
           gap: 12px;
         }
+        .lang-switcher {
+          display: inline-flex;
+          align-items: center;
+          background: var(--bg-input);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          padding: 3px;
+          gap: 2px;
+        }
         .lang-btn {
+          padding: 5px 10px;
+          font-size: 12px;
+          font-weight: 500;
+          border: none;
+          border-radius: 4px;
+          background: transparent;
+          color: var(--text-muted);
+          cursor: pointer;
+          transition: all var(--transition);
+          line-height: 1;
+        }
+        .lang-btn:hover {
+          color: var(--text-primary);
+        }
+        .lang-btn.lang-active {
+          background: var(--bg-card);
+          color: var(--accent);
           font-weight: 600;
-          min-width: 48px;
-          padding: 6px 10px;
-          font-size: 13px;
+          box-shadow: var(--shadow);
+        }
+        .lang-divider {
+          width: 1px;
+          height: 14px;
+          background: var(--border);
+          margin: 0 1px;
         }
         .steps-bar {
           max-width: 1200px;
