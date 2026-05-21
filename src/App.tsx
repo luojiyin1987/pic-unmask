@@ -3,6 +3,7 @@ import UploadPanel from './components/UploadPanel'
 import MaskEditor from './components/MaskEditor'
 import ResultViewer from './components/ResultViewer'
 import { useI18n } from './lib/I18nContext'
+import type { PreparedInputs } from './lib/preprocess'
 
 const ORT_VERSION = '1.26.0'
 const DEFAULT_MODEL_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx'
@@ -26,6 +27,8 @@ export default function App() {
   const [statusType, setStatusType] = useState<'ready' | 'busy' | 'error'>('ready')
 
   const workerRef = useRef<Worker | null>(null)
+  const preparedRef = useRef<PreparedInputs | null>(null)
+  const imageUrlRef = useRef<string | null>(null)
 
   // Keep status text in sync when lang changes
   useEffect(() => {
@@ -38,22 +41,36 @@ export default function App() {
   }, [lang, busy, statusType, resultUrl, t])
 
   useEffect(() => {
+    imageUrlRef.current = imageUrl
+  }, [imageUrl])
+
+  useEffect(() => {
     const worker = new Worker(new URL('./workers/inference.worker.ts', import.meta.url), { type: 'module' })
     workerRef.current = worker
 
-    worker.onmessage = (e: MessageEvent<WorkerMessage>) => {
+    worker.onmessage = async (e: MessageEvent<WorkerMessage>) => {
       const msg = e.data
       if (msg.type === 'STATUS') {
         setStatus(msg.message)
       } else if (msg.type === 'RESULT') {
-        const canvas = document.createElement('canvas')
-        canvas.width = msg.imageData.width
-        canvas.height = msg.imageData.height
-        canvas.getContext('2d')!.putImageData(msg.imageData, 0, 0)
-        setResultUrl(canvas.toDataURL('image/png'))
-        setBusy(false)
-        setStatusType('ready')
-        setStatus(t('statusDone'))
+        try {
+          const prepared = preparedRef.current
+          if (!prepared || !imageUrlRef.current) {
+            throw new Error('Missing crop metadata for compositing.')
+          }
+
+          const { composeResultImage } = await import('./lib/preprocess')
+          const composedUrl = await composeResultImage(imageUrlRef.current, prepared.crop, msg.imageData)
+          setResultUrl(composedUrl)
+          setBusy(false)
+          setStatusType('ready')
+          setStatus(t('statusDone'))
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to compose result image.'
+          setStatusType('error')
+          setStatus(message)
+          setBusy(false)
+        }
       } else if (msg.type === 'ERROR') {
         setStatusType('error')
         setStatus(msg.message)
@@ -75,23 +92,37 @@ export default function App() {
 
   const handleRun = useCallback(async () => {
     if (!imageUrl || !maskCanvas || busy) return
-    setBusy(true)
-    setStatusType('busy')
-    setStatus(t('statusPreprocessing'))
+    try {
+      setBusy(true)
+      setStatusType('busy')
+      setStatus(t('statusPreprocessing'))
 
-    const { prepareInferenceInputs } = await import('./lib/preprocess')
-    const prepared = await prepareInferenceInputs(imageUrl, maskCanvas, 512, 512)
+      const { prepareInferenceInputs } = await import('./lib/preprocess')
+      const prepared = await prepareInferenceInputs(imageUrl, maskCanvas, 512, 512)
+      preparedRef.current = prepared
 
-    setStatus(t('statusRunning'))
-    workerRef.current!.postMessage({
-      type: 'INFER',
-      modelUrl: MODEL_URL,
-      wasmBaseUrl: WASM_BASE_URL,
-      imageBytes: prepared.image.buffer,
-      maskBytes: prepared.mask.buffer,
-      width: prepared.width,
-      height: prepared.height,
-    }, [prepared.image.buffer, prepared.mask.buffer])
+      setStatus(t('statusRunning'))
+      workerRef.current!.postMessage({
+        type: 'INFER',
+        modelUrl: MODEL_URL,
+        wasmBaseUrl: WASM_BASE_URL,
+        imageBytes: prepared.image.buffer,
+        maskBytes: prepared.mask.buffer,
+        width: prepared.width,
+        height: prepared.height,
+      }, [prepared.image.buffer, prepared.mask.buffer])
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message === 'Please draw a mask before running inpainting.'
+          ? t('statusMaskRequired')
+          : error instanceof Error
+            ? error.message
+            : t('statusError')
+      preparedRef.current = null
+      setStatusType('error')
+      setStatus(message)
+      setBusy(false)
+    }
   }, [imageUrl, maskCanvas, busy, t])
 
   const getStepState = (stepId: number) => {
@@ -116,9 +147,15 @@ export default function App() {
     setImageUrl(null)
     setResultUrl(null)
     setMaskCanvas(null)
+    preparedRef.current = null
     setStatus(t('statusReady'))
     setStatusType('ready')
   }, [t])
+
+  useEffect(() => {
+    preparedRef.current = null
+    setResultUrl(null)
+  }, [imageUrl])
 
   const switchLang = useCallback(
     (next: 'en' | 'zh') => {
