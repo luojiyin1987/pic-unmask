@@ -7,7 +7,7 @@ User Browser
 │
 ├─ Cloudflare Pages (React/Vite SPA)
 │  ├─ UI: Upload / Mask Editor / Result Preview
-│  ├─ Image Preprocess (Canvas API → 512×512 RGB)
+│  ├─ Image Preprocess (mask-guided crop → 512×512 inference patch)
 │  ├─ Mask Editor (Canvas-based brush / polygon)
 │  └─ WebWorker (inference.js)
 │     └─ ONNX Runtime Web
@@ -30,7 +30,7 @@ User Browser
 | 推理后端 | onnxruntime-web 1.17+ | 官方支持 WebGPU / WASM / WebNN |
 | 执行后端优先级 | WebGPU → WASM SIMD threaded | WebGPU 对 Conv/TransposeConv 收益巨大；WASM 保底 |
 | 数据类型 | fp16 | 模型体积减半，WebGPU 原生支持 fp16 storage |
-| 输入尺寸 | 512×512 (固定) | 首期范围可控；后续再支持 dynamic shape / 多分辨率 |
+| 输入尺寸 | 512×512 patch (固定) | 模型仍吃固定 patch，但只对 mask 局部区域推理，输出再贴回原图 |
 | 模型加载 | R2 Custom Domain / CDN | Pages Function 有 50MB limit，大模型走 R2 + 签名 URL |
 | 线程隔离 | 必须 WebWorker | 避免阻塞主线程；WASM 多线程需在 Worker 中启用 |
 
@@ -49,7 +49,7 @@ User Browser
 │   ├── workers/
 │   │   └── inference.worker.ts   # ONNX Runtime 推理 Worker
 │   ├── lib/
-│   │   ├── preprocess.ts         # Image → Tensor (512×512, NCHW)
+│   │   ├── preprocess.ts         # Mask-guided crop / patch compose
 │   │   ├── postprocess.ts        # Tensor → Image
 │   │   └── ort-env.ts            # ORT backend 初始化与环境配置
 │   └── App.tsx
@@ -68,10 +68,11 @@ Cloudflare Pages 的免费/Pro 计划对单个文件大小有限制（通过 Fun
 3. **应用启动后懒加载模型**，可通过 `VITE_MODEL_URL` 切换到 Hugging Face、R2 或自有 CDN。
 4. **ORT WASM 文件默认从公网 CDN 加载**，优先 `jsDelivr`，失败时回退 `unpkg`，并在 Worker 中用 `ort.env.wasm.wasmPaths` 显式指定。
 
-## 5. 输入输出规范 (512×512)
+## 5. 输入输出规范 (512×512 patch)
 
-- **输入图像**：用户上传任意尺寸图片 → Canvas 居中 crop/resize 到 512×512 → RGB。
-- **Mask**：用户在编辑器绘制单通道 mask（0=保留, 1=修复），512×512，二值化，并做 4px 膨胀处理。
+- **输入图像**：用户上传任意尺寸图片，编辑器按原图比例显示，并在原图坐标系上保存 mask。
+- **Crop-region inference**：根据 mask 包围盒计算带上下文的 square crop，将该局部区域 resize 到 512×512 做推理。
+- **Mask**：推理前将 crop 内 mask resize 到 512×512，二值化，并做 4px 膨胀处理。
 - **ONNX Input**（Worker 会根据模型元数据自动适配）：
   - **官方 MI-GAN ONNX pipeline**：`image` 为 `uint8` RGB，`mask` 为 `uint8` Grayscale
   - **传统双输入网络**：`image` 为 `float16/float32 [1,3,H,W]`，`mask` 为 `float16/float32 [1,1,H,W]`
@@ -113,11 +114,11 @@ Worker 内完成：
 
 - **CORS**: 如果模型放在 R2 Custom Domain，需允许 Pages domain 的 `cross-origin` 请求。
 - **Cache-Control**: R2 上的模型和 WASM 设置长期缓存（immutable）。
-- **内存**: WebGPU 推理时 GPU buffer 占用大，512×512 FP16 约 ~3MB feature map，显存可控。
+- **内存**: WebGPU 推理时 GPU buffer 占用仍主要由 512×512 patch 决定，显存压力可控；主线程额外承担一次原图回贴。
 - **降级提示**: WebGPU 不可用时给出 UI 提示“正在使用 CPU 模式，速度较慢”。
 
 ## 10. 后续扩展
 
-- Dynamic shape: 导出多分辨率 ONNX (256/512/1024) 或支持 dynamic axes。
+- Dynamic shape: 导出多分辨率 ONNX (256/512/1024) 或支持 dynamic axes，减少当前固定 patch 对极大/极小区域的折中。
 - WebNN: 待 ONNX Runtime Web 的 WebNN backend 成熟后可加入 `['webnn', 'webgpu', 'wasm']`。
 - Tile-based inference: 对于 2048+ 大图分块推理。
