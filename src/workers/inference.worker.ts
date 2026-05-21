@@ -4,7 +4,7 @@ import { detectBackend } from '../lib/ort-env'
 let session: ort.InferenceSession | null = null
 let currentModelUrl = ''
 const MODEL_CACHE_NAME = 'migan-model-cache-v2'
-const ORT_WASM_CDN_FALLBACK = 'https://unpkg.com/onnxruntime-web@1.18.0/dist/'
+const ORT_WASM_CDN_FALLBACK = 'https://unpkg.com/onnxruntime-web@1.26.0/dist/'
 
 type InferMessage = {
   type: 'INFER'

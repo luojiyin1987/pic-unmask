@@ -11,7 +11,7 @@
     "pages:deploy": "wrangler pages deploy dist"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.18.0",
+    "onnxruntime-web": "1.26.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
