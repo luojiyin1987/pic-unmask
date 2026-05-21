@@ -8,6 +8,7 @@ interface Translations {
   statusRunning: string
   statusDone: string
   statusError: string
+  statusMaskRequired: string
   btnNew: string
   btnRunInpainting: string
   btnProcessing: string
@@ -17,6 +18,7 @@ interface Translations {
   uploadTitle: string
   uploadDesc: string
   uploadHint: string
+  uploadSubHint: string
   maskTitle: string
   maskDesc: string
   maskPlaceholder: string
@@ -52,6 +54,7 @@ const dict: Record<Lang, Translations> = {
     statusRunning: 'Running inference in WebWorker...',
     statusDone: 'Inpainting complete',
     statusError: 'Error',
+    statusMaskRequired: 'Please draw a mask before running inpainting.',
     btnNew: 'New',
     btnRunInpainting: 'Run Inpainting',
     btnProcessing: 'Processing...',
@@ -61,7 +64,7 @@ const dict: Record<Lang, Translations> = {
     uploadTitle: 'Upload Image',
     uploadDesc: 'Choose a photo to remove objects or restore damaged areas',
     uploadHint: 'Drop image here or click to browse',
-    uploadSubHint: 'Supports JPG, PNG · Max 5MB · 512×512 recommended',
+    uploadSubHint: 'Supports JPG, PNG · Max 5MB · Large images keep full resolution via local crop inference',
     maskTitle: 'Draw Mask',
     maskDesc: 'Paint over the area you want to inpaint',
     maskPlaceholder: 'Upload an image first to start masking',
@@ -91,6 +94,7 @@ const dict: Record<Lang, Translations> = {
     statusRunning: 'WebWorker 推理中...',
     statusDone: '修复完成',
     statusError: '错误',
+    statusMaskRequired: '请先绘制需要修复的蒙版区域。',
     btnNew: '新建',
     btnRunInpainting: '开始修复',
     btnProcessing: '处理中...',
@@ -100,7 +104,7 @@ const dict: Record<Lang, Translations> = {
     uploadTitle: '上传图片',
     uploadDesc: '选择一张需要移除物体或修复的照片',
     uploadHint: '拖拽图片到此处或点击浏览',
-    uploadSubHint: '支持 JPG、PNG · 最大 5MB · 推荐 512×512',
+    uploadSubHint: '支持 JPG、PNG · 最大 5MB · 大图会走局部裁切推理并保留原始分辨率',
     maskTitle: '绘制蒙版',
     maskDesc: '在需要修复的区域上涂抹',
     maskPlaceholder: '请先上传图片以开始涂抹',
