@@ -120,9 +120,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                   <img src={resultUrl} alt="result" className="compare-top" />
                 </div>
                 {/* Draggable slider line */}
-                <div className="compare-slider" style={{ left: `${sliderPos}%` }}>
-                  <div className="compare-slider-handle" />
-                </div>
+                <div className="compare-slider" style={{ left: `${sliderPos}%` }} />
                 <div className="compare-label compare-label-before">Before</div>
                 <div className="compare-label compare-label-after">After</div>
               </div>
@@ -286,28 +284,12 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
           position: absolute;
           top: 0;
           bottom: 0;
-          width: 2px;
-          background: var(--accent);
+          width: 1px;
+          background: rgba(255, 255, 255, 0.8);
           transform: translateX(-50%);
           cursor: ew-resize;
           z-index: 10;
-        }
-        .compare-slider-handle {
-          position: absolute;
-          top: 50%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: 36px;
-          height: 36px;
-          border-radius: 50%;
-          background: var(--bg-card);
-          border: 2px solid var(--accent);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 2px;
-          color: var(--accent);
-          box-shadow: 0 0 12px var(--accent-glow);
+          box-shadow: 0 0 4px rgba(0, 0, 0, 0.2);
         }
         .compare-label {
           position: absolute;
