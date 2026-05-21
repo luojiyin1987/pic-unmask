@@ -2,6 +2,7 @@ import { useCallback, useRef, useState, useEffect } from 'react'
 import UploadPanel from './components/UploadPanel'
 import MaskEditor from './components/MaskEditor'
 import ResultViewer from './components/ResultViewer'
+import { useI18n } from './lib/I18nContext'
 
 const ORT_VERSION = '1.26.0'
 const DEFAULT_MODEL_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx'
@@ -14,21 +15,27 @@ type WorkerMessage =
   | { type: 'ERROR'; message: string }
   | { type: 'STATUS'; message: string }
 
-const STEPS = [
-  { id: 0, label: 'Upload', key: 'upload' },
-  { id: 1, label: 'Mask', key: 'mask' },
-  { id: 2, label: 'Result', key: 'result' },
-] as const
-
 export default function App() {
+  const { lang, setLang, t } = useI18n()
+
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [resultUrl, setResultUrl] = useState<string | null>(null)
   const [maskCanvas, setMaskCanvas] = useState<HTMLCanvasElement | null>(null)
-  const [status, setStatus] = useState<string>('Ready')
+  const [status, setStatus] = useState<string>(t('statusReady'))
   const [busy, setBusy] = useState(false)
   const [statusType, setStatusType] = useState<'ready' | 'busy' | 'error'>('ready')
 
   const workerRef = useRef<Worker | null>(null)
+
+  // Keep status text in sync when lang changes
+  useEffect(() => {
+    if (!busy && statusType === 'ready' && !resultUrl) {
+      setStatus(t('statusReady'))
+    }
+    if (resultUrl && !busy) {
+      setStatus(t('statusDone'))
+    }
+  }, [lang, busy, statusType, resultUrl, t])
 
   useEffect(() => {
     const worker = new Worker(new URL('./workers/inference.worker.ts', import.meta.url), { type: 'module' })
@@ -46,7 +53,7 @@ export default function App() {
         setResultUrl(canvas.toDataURL('image/png'))
         setBusy(false)
         setStatusType('ready')
-        setStatus('Inpainting complete')
+        setStatus(t('statusDone'))
       } else if (msg.type === 'ERROR') {
         setStatusType('error')
         setStatus(msg.message)
@@ -64,18 +71,18 @@ export default function App() {
       worker.terminate()
       workerRef.current = null
     }
-  }, [])
+  }, [t])
 
   const handleRun = useCallback(async () => {
     if (!imageUrl || !maskCanvas || busy) return
     setBusy(true)
     setStatusType('busy')
-    setStatus('Preprocessing...')
+    setStatus(t('statusPreprocessing'))
 
     const { prepareInferenceInputs } = await import('./lib/preprocess')
     const prepared = await prepareInferenceInputs(imageUrl, maskCanvas, 512, 512)
 
-    setStatus('Running inference in WebWorker...')
+    setStatus(t('statusRunning'))
     workerRef.current!.postMessage({
       type: 'INFER',
       modelUrl: MODEL_URL,
@@ -85,7 +92,7 @@ export default function App() {
       width: prepared.width,
       height: prepared.height,
     }, [prepared.image.buffer, prepared.mask.buffer])
-  }, [imageUrl, maskCanvas, busy])
+  }, [imageUrl, maskCanvas, busy, t])
 
   const getStepState = (stepId: number) => {
     if (stepId === 0) {
@@ -109,9 +116,19 @@ export default function App() {
     setImageUrl(null)
     setResultUrl(null)
     setMaskCanvas(null)
-    setStatus('Ready')
+    setStatus(t('statusReady'))
     setStatusType('ready')
-  }, [])
+  }, [t])
+
+  const toggleLang = useCallback(() => {
+    setLang(lang === 'en' ? 'zh' : 'en')
+  }, [lang, setLang])
+
+  const STEPS = [
+    { id: 0, label: t('stepUpload'), key: 'upload' },
+    { id: 1, label: t('stepMask'), key: 'mask' },
+    { id: 2, label: t('stepResult'), key: 'result' },
+  ] as const
 
   return (
     <div className="app">
@@ -124,17 +141,20 @@ export default function App() {
               <circle cx="8.5" cy="8.5" r="1.5" />
               <polyline points="21 15 16 10 5 21" />
             </svg>
-            <h1>MIGAN Inpainting</h1>
+            <h1>{t('appTitle')}</h1>
           </div>
           <div className="app-meta">
             <span className={`status-badge ${statusType}`}>{status}</span>
+            <button className="btn btn-ghost lang-btn" onClick={toggleLang} title="Switch language">
+              {lang === 'en' ? '中文' : 'English'}
+            </button>
             {resultUrl && (
               <button className="btn btn-ghost" onClick={handleReset} title="Start over">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="1 4 1 10 7 10" />
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                 </svg>
-                New
+                {t('btnNew')}
               </button>
             )}
           </div>
@@ -172,9 +192,9 @@ export default function App() {
           <div className="section-header">
             <h2>
               <span className="section-num">01</span>
-              Upload Image
+              {t('uploadTitle')}
             </h2>
-            <p className="text-secondary">Choose a photo to remove objects or restore damaged areas</p>
+            <p className="text-secondary">{t('uploadDesc')}</p>
           </div>
           <UploadPanel onImageLoaded={setImageUrl} hasImage={!!imageUrl} />
         </section>
@@ -184,9 +204,9 @@ export default function App() {
           <div className="section-header">
             <h2>
               <span className="section-num">02</span>
-              Draw Mask
+              {t('maskTitle')}
             </h2>
-            <p className="text-secondary">Paint over the area you want to inpaint</p>
+            <p className="text-secondary">{t('maskDesc')}</p>
           </div>
           {imageUrl ? (
             <MaskEditor imageUrl={imageUrl} onMaskChange={setMaskCanvas} />
@@ -198,7 +218,7 @@ export default function App() {
                 <path d="M2 2l7.586 7.586" />
                 <circle cx="11" cy="11" r="2" />
               </svg>
-              <p>Upload an image first to start masking</p>
+              <p>{t('maskPlaceholder')}</p>
             </div>
           )}
         </section>
@@ -208,9 +228,9 @@ export default function App() {
           <div className="section-header">
             <h2>
               <span className="section-num">03</span>
-              Result
+              {t('resultTitle')}
             </h2>
-            <p className="text-secondary">AI-powered image restoration</p>
+            <p className="text-secondary">{t('resultDesc')}</p>
           </div>
 
           <div className="result-actions">
@@ -224,14 +244,14 @@ export default function App() {
                   <svg className="spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
-                  Processing...
+                  {t('btnProcessing')}
                 </>
               ) : (
                 <>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <polygon points="5 3 19 12 5 21 5 3" />
                   </svg>
-                  Run Inpainting
+                  {t('btnRunInpainting')}
                 </>
               )}
             </button>
@@ -243,10 +263,7 @@ export default function App() {
 
       {/* Footer */}
       <footer className="app-footer">
-        <p>
-          Powered by <span className="text-accent">ONNX Runtime Web</span> with{' '}
-          <span className="text-accent">WebGPU</span> / <span className="text-accent">WASM</span> fallback
-        </p>
+        <p>{t('footer')}</p>
       </footer>
 
       <style>{`
@@ -291,6 +308,12 @@ export default function App() {
           display: flex;
           align-items: center;
           gap: 12px;
+        }
+        .lang-btn {
+          font-weight: 600;
+          min-width: 48px;
+          padding: 6px 10px;
+          font-size: 13px;
         }
         .steps-bar {
           max-width: 1200px;

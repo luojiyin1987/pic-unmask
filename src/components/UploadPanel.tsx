@@ -1,4 +1,5 @@
 import { useRef, useCallback, useState } from 'react'
+import { useI18n } from '../lib/I18nContext'
 
 interface Props {
   onImageLoaded: (url: string) => void
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export default function UploadPanel({ onImageLoaded, hasImage }: Props) {
+  const { t } = useI18n()
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragOver, setIsDragOver] = useState(false)
 
@@ -66,8 +68,8 @@ export default function UploadPanel({ onImageLoaded, hasImage }: Props) {
           </svg>
         </div>
         <div className="upload-text">
-          <p className="upload-title">Drop image here or click to browse</p>
-          <p className="upload-hint">Supports JPG, PNG · Max 5MB · 512×512 recommended</p>
+          <p className="upload-title">{t('uploadHint')}</p>
+          <p className="upload-hint">{t('uploadSubHint')}</p>
         </div>
       </div>
 

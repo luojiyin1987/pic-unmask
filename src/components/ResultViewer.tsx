@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import { useI18n } from '../lib/I18nContext'
 
 interface Props {
   resultUrl: string | null
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export default function ResultViewer({ resultUrl, originalUrl }: Props) {
+  const { t } = useI18n()
   const [showOriginal, setShowOriginal] = useState(false)
   const [sliderPos, setSliderPos] = useState(50)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -47,7 +49,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
           <circle cx="8.5" cy="8.5" r="1.5" />
           <polyline points="21 15 16 10 5 21" />
         </svg>
-        <p>Your inpainted image will appear here</p>
+        <p>{t('resultPlaceholder')}</p>
       </div>
     )
   }
@@ -68,7 +70,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                   <circle cx="8.5" cy="8.5" r="1.5" />
                   <polyline points="21 15 16 10 5 21" />
                 </svg>
-                Result
+                {t('resultTab')}
               </button>
               <button
                 className={`toggle-btn ${showOriginal ? 'toggle-active' : ''}`}
@@ -79,7 +81,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                   <line x1="9" y1="9" x2="15" y2="15" />
                   <line x1="15" y1="9" x2="9" y2="15" />
                 </svg>
-                Original
+                {t('originalTab')}
               </button>
             </div>
 
@@ -93,7 +95,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
               </svg>
-              Download
+              {t('download')}
             </a>
           </div>
 
@@ -121,8 +123,8 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                 </div>
                 {/* Draggable slider line */}
                 <div className="compare-slider" style={{ left: `${sliderPos}%` }} />
-                <div className="compare-label compare-label-before">Before</div>
-                <div className="compare-label compare-label-after">After</div>
+                <div className="compare-label compare-label-before">{t('before')}</div>
+                <div className="compare-label compare-label-after">{t('after')}</div>
               </div>
             ) : (
               <img
@@ -141,7 +143,7 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
               <polyline points="12 6 12 12 16 14" />
             </svg>
           </div>
-          <p>Click "Run Inpainting" to generate the result</p>
+          <p>{t('resultPlaceholder')}</p>
           {originalUrl && (
             <img src={originalUrl} alt="original preview" className="result-preview-img" />
           )}

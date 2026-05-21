@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
+import { useI18n } from '../lib/I18nContext'
 
 interface Props {
   imageUrl: string
@@ -6,6 +7,7 @@ interface Props {
 }
 
 export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
+  const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
@@ -186,25 +188,25 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
               <path d="M18 13.5c-2.5 2.5-5 5-7.5 7.5l-6-6c2.5-2.5 5-5 7.5-7.5" />
               <path d="M14.5 9.5l-5-5 2.5-2.5 5 5z" />
             </svg>
-            <span>Brush</span>
+            <span>{t('brush')}</span>
           </button>
           <button
             className={`toolbar-btn ${mode === 'erase' ? 'toolbar-active' : ''}`}
             onClick={() => setMode('erase')}
-            title="Eraser"
+            title={t('erase')}
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 20H7L3 16C2 15 2 13 3 12L13 2L22 11L20 20Z" />
               <path d="M17 17L7 7" />
             </svg>
-            <span>Erase</span>
+            <span>{t('erase')}</span>
           </button>
         </div>
 
         <div className="mask-toolbar-divider" />
 
         <div className="mask-toolbar-group brush-size-group">
-          <span className="toolbar-label">Size</span>
+          <span className="toolbar-label">{t('size')}</span>
           <input
             type="range"
             min={4}
@@ -225,14 +227,14 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
 
         <div className="mask-toolbar-divider" />
 
-        <button className="btn btn-danger btn-sm" onClick={clearMask} title="Clear all">
+        <button className="btn btn-danger btn-sm" onClick={clearMask} title={t('clear')}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             <line x1="10" y1="11" x2="10" y2="17" />
             <line x1="14" y1="11" x2="14" y2="17" />
           </svg>
-          Clear
+          {t('clear')}
         </button>
       </div>
 
@@ -254,7 +256,7 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
               <path d="M2 2l7.586 7.586" />
               <circle cx="11" cy="11" r="2" />
             </svg>
-            {mode === 'draw' ? 'Paint over the area to remove' : 'Erase mask strokes'}
+            {mode === 'draw' ? t('maskHintDraw') : t('maskHintErase')}
           </span>
         </div>
       </div>
