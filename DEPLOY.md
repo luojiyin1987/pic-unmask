@@ -20,14 +20,14 @@ https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onn
 
 ### 方案 B: 模型放 R2
 
-`migan-fp16.onnx` 常见分发版本约 **29.5 MiB**，超过 Cloudflare Pages 单个静态文件 **25 MiB** 上限，所以推荐把模型放 R2。ORT wasm 则默认走公网 CDN。
+默认模型 `migan_pipeline_v2.onnx` 约 **29.5 MiB**，超过 Cloudflare Pages 单个静态文件 **25 MiB** 上限，所以推荐把模型放 R2。ORT wasm 则默认走公网 CDN。
 
 ```bash
 # 创建 R2 bucket 存放模型
 wrangler r2 bucket create migan-assets
 
-# 上传 MIGAN FP16 ONNX 模型
-wrangler r2 object put migan-assets/models/migan-fp16.onnx --file=/path/to/migan-fp16.onnx
+# 上传 MIGAN ONNX 模型
+wrangler r2 object put migan-assets/models/migan_pipeline_v2.onnx --file=/path/to/migan_pipeline_v2.onnx
 ```
 
 ### R2 Custom Domain / Public Access
@@ -39,10 +39,10 @@ wrangler r2 object put migan-assets/models/migan-fp16.onnx --file=/path/to/migan
 如果你的模型文件小于 25 MiB，可以直接放到：
 
 ```bash
-public/models/migan-fp16.onnx
+public/models/migan_pipeline_v2.onnx
 ```
 
-本仓库默认就会从 `/models/migan-fp16.onnx` 加载。
+如果要把模型作为本地静态文件加载，需同时在 `.env` 中将 `VITE_MODEL_URL` 改为 `/models/migan_pipeline_v2.onnx`。
 
 ## 2. 配置环境变量
 
@@ -123,5 +123,5 @@ Pages 侧的静态响应头通过 `public/_headers` 提供：
 ## 9. 已知限制
 
 - Pages Functions 有 50MB 内存限制，但模型在浏览器端运行，不经过 Pages Function。
-- Pages 单文件上限是 25 MiB；29.5 MiB 的 `migan.onnx` 不适合直接作为 Pages 静态文件发布。
+- Pages 单文件上限是 25 MiB；29.5 MiB 的 `migan_pipeline_v2.onnx` 不适合直接作为 Pages 静态文件发布。
 - `ort-wasm-simd-threaded.jsep.wasm` 也超过 25 MiB，因此默认不作为 Pages 静态文件随站点发布。

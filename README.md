@@ -27,13 +27,19 @@ See [DEPLOY.md](./DEPLOY.md) for the full deployment notes.
 
 ## Model
 
-Default model:
+Default model (~29.5 MiB):
 
 ```text
 https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx
 ```
 
-Override with:
+The inference worker automatically adapts to the model's input metadata:
+
+- **MI-GAN ONNX pipeline**: `image` (`uint8` RGB) + `mask` (`uint8` Grayscale)
+- **Standard dual-input**: `image` (`float16/float32` NCHW) + `mask` (`float16/float32` NCHW)
+- **Single-input**: auto-concatenates masked image + mask into 4 channels
+
+Override the model URL at build time:
 
 ```text
 VITE_MODEL_URL=...

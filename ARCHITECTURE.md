@@ -15,7 +15,7 @@ User Browser
 │         └─ WASM fallback (CPU)
 │
 └─ Cloudflare R2 / CDN
-   ├─ migan-fp16.onnx        (model, ~50-200MB)
+   ├─ migan_pipeline_v2.onnx (model, ~29.5 MiB)
    ├─ ort-wasm-simd.wasm
    ├─ ort-wasm-simd-threaded.wasm
    ├─ ort-wasm-simd.jsep.wasm
@@ -70,13 +70,16 @@ Cloudflare Pages 的免费/Pro 计划对单个文件大小有限制（通过 Fun
 
 ## 5. 输入输出规范 (512×512)
 
-- **输入图像**：用户上传任意尺寸图片 → Canvas 居中 crop/resize 到 512×512 → RGB 归一化到 [-1, 1] 或 [0, 1]（取决于模型训练配置）。
-- **Mask**：用户在编辑器绘制单通道 mask（0=保留, 1=修复），512×512，二值化。
-- **ONNX Input**:
-  - `image`: float32[1, 3, 512, 512] (NCHW)
-  - `mask`: float32[1, 1, 512, 512] (NCHW)
-- **ONNX Output**:
-  - `output`: float32[1, 3, 512, 512] → 反归一化 → Canvas → PNG/DataURL
+- **输入图像**：用户上传任意尺寸图片 → Canvas 居中 crop/resize 到 512×512 → RGB。
+- **Mask**：用户在编辑器绘制单通道 mask（0=保留, 1=修复），512×512，二值化，并做 4px 膨胀处理。
+- **ONNX Input**（Worker 会根据模型元数据自动适配）：
+  - **官方 MI-GAN ONNX pipeline**：`image` 为 `uint8` RGB，`mask` 为 `uint8` Grayscale
+  - **传统双输入网络**：`image` 为 `float16/float32 [1,3,H,W]`，`mask` 为 `float16/float32 [1,1,H,W]`
+  - **单输入网络**：自动将图像与 mask 拼成 4 通道输入
+- **ONNX Output**：
+  - 支持 `float16` / `float32` / `uint8` 输出
+  - 输出 layout 支持 NCHW (`[1,3,H,W]`)、NHWC (`[1,H,W,3]`) 或 CHW (`[3,H,W]`)
+  - 反归一化后 → Canvas → PNG/DataURL
 
 ## 6. WebWorker 职责
 
