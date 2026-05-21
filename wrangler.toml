@@ -1,0 +1,8 @@
+name = "migan-web"
+compatibility_date = "2024-05-21"
+
+# Cloudflare Pages project config
+# Build command: npm run build
+# Build output directory: dist
+
+# Static response headers for Pages are configured in public/_headers.
