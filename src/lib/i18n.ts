@@ -37,6 +37,9 @@ interface Translations {
   resultPlaceholder: string
   before: string
   after: string
+  privacyBadge: string
+  privacyUploadHint: string
+  privacyFooter: string
   // Misc
   [key: string]: string
 }
@@ -77,6 +80,9 @@ const dict: Record<Lang, Translations> = {
     resultPlaceholder: 'Your inpainted image will appear here',
     before: 'Before',
     after: 'After',
+    privacyBadge: 'Privacy First',
+    privacyUploadHint: 'Your image is processed entirely in your browser. Nothing is uploaded to any server.',
+    privacyFooter: 'Your images never leave your browser. All AI processing runs locally on your device.',
   },
   zh: {
     appTitle: 'MIGAN 图像修复',
@@ -113,6 +119,9 @@ const dict: Record<Lang, Translations> = {
     resultPlaceholder: '修复后的图片将显示在此处',
     before: '修复前',
     after: '修复后',
+    privacyBadge: '隐私优先',
+    privacyUploadHint: '图片仅在您的浏览器中处理，不会上传到任何服务器。',
+    privacyFooter: '您的图片不会离开浏览器，所有 AI 处理均在本地设备上运行。',
   },
 }
 

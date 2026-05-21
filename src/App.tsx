@@ -145,6 +145,13 @@ export default function App() {
               <polyline points="21 15 16 10 5 21" />
             </svg>
             <h1>{t('appTitle')}</h1>
+            <span className="privacy-badge" title={t('privacyUploadHint')}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <path d="M9 12l2 2 4-4" />
+              </svg>
+              {t('privacyBadge')}
+            </span>
           </div>
           <div className="app-meta">
             <span className={`status-badge ${statusType}`}>{status}</span>
@@ -279,6 +286,7 @@ export default function App() {
       {/* Footer */}
       <footer className="app-footer">
         <p>{t('footer')}</p>
+        <p className="privacy-footer">{t('privacyFooter')}</p>
       </footer>
 
       <style>{`
@@ -458,7 +466,30 @@ export default function App() {
           background: var(--bg-secondary);
         }
         .app-footer p {
-          margin: 0;
+          margin: 0 0 6px;
+        }
+        .app-footer p:last-child {
+          margin-bottom: 0;
+        }
+        .privacy-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          padding: 3px 10px;
+          border-radius: 9999px;
+          font-size: 11px;
+          font-weight: 600;
+          color: #15803d;
+          background: rgba(34, 197, 94, 0.12);
+          border: 1px solid rgba(34, 197, 94, 0.25);
+          letter-spacing: 0.02em;
+          cursor: help;
+          margin-left: 6px;
+        }
+        .privacy-footer {
+          font-size: 12px;
+          color: var(--text-muted);
+          opacity: 0.8;
         }
         .spin {
           animation: spin 1s linear infinite;
