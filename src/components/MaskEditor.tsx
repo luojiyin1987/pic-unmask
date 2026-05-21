@@ -9,6 +9,7 @@ interface Props {
 export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
   const { t } = useI18n()
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const imageRef = useRef<HTMLImageElement | null>(null)
   const lastPointRef = useRef<{ x: number; y: number } | null>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [brushSize, setBrushSize] = useState(24)
@@ -16,40 +17,66 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
   const maskCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const [hasDrawn, setHasDrawn] = useState(false)
 
+  const renderDisplay = useCallback(() => {
+    const displayCanvas = canvasRef.current
+    const image = imageRef.current
+
+    if (!displayCanvas || !image) {
+      return
+    }
+
+    const dctx = displayCanvas.getContext('2d')
+    if (!dctx) {
+      return
+    }
+
+    dctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height)
+    dctx.drawImage(image, 0, 0, displayCanvas.width, displayCanvas.height)
+
+    const maskCanvas = maskCanvasRef.current
+    if (!maskCanvas) {
+      return
+    }
+
+    const overlayCanvas = document.createElement('canvas')
+    overlayCanvas.width = displayCanvas.width
+    overlayCanvas.height = displayCanvas.height
+    const octx = overlayCanvas.getContext('2d')
+
+    if (!octx) {
+      return
+    }
+
+    octx.drawImage(maskCanvas, 0, 0, overlayCanvas.width, overlayCanvas.height)
+    octx.globalCompositeOperation = 'source-in'
+    octx.fillStyle = 'rgba(14, 165, 233, 0.65)'
+    octx.fillRect(0, 0, overlayCanvas.width, overlayCanvas.height)
+    dctx.drawImage(overlayCanvas, 0, 0)
+  }, [])
+
   useEffect(() => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => {
       const displayCanvas = canvasRef.current!
-      const displaySize = 512
-      displayCanvas.width = displaySize
-      displayCanvas.height = displaySize
-
-      // Center-crop to square (same logic as preprocess)
-      const srcAspect = img.width / img.height
-      let sx = 0, sy = 0, sw = img.width, sh = img.height
-      if (srcAspect > 1) {
-        sw = img.height
-        sx = (img.width - sw) / 2
-      } else {
-        sh = img.width
-        sy = (img.height - sh) / 2
-      }
-
-      const ctx = displayCanvas.getContext('2d')!
-      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, displaySize, displaySize)
+      const maxDisplayEdge = 768
+      const scale = Math.min(1, maxDisplayEdge / Math.max(img.width, img.height))
+      displayCanvas.width = Math.max(1, Math.round(img.width * scale))
+      displayCanvas.height = Math.max(1, Math.round(img.height * scale))
 
       const maskCanvas = document.createElement('canvas')
-      maskCanvas.width = 512
-      maskCanvas.height = 512
+      maskCanvas.width = img.width
+      maskCanvas.height = img.height
       const maskCtx = maskCanvas.getContext('2d')!
-      maskCtx.clearRect(0, 0, 512, 512)
+      maskCtx.clearRect(0, 0, img.width, img.height)
+      imageRef.current = img
       maskCanvasRef.current = maskCanvas
+      renderDisplay()
       onMaskChange(maskCanvas)
       setHasDrawn(false)
     }
     img.src = imageUrl
-  }, [imageUrl, onMaskChange])
+  }, [imageUrl, onMaskChange, renderDisplay])
 
   useEffect(() => {
     lastPointRef.current = null
@@ -70,50 +97,37 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
   )
 
   const applyStroke = useCallback(
-    (
-      dctx: CanvasRenderingContext2D,
-      mctx: CanvasRenderingContext2D,
-      from: { x: number; y: number },
-      to: { x: number; y: number }
-    ) => {
-      const displayComposite = mode === 'draw' ? 'source-over' : 'destination-out'
-      const maskComposite = mode === 'draw' ? 'source-over' : 'destination-out'
+    (mctx: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const displayCanvas = canvasRef.current
+      const maskCanvas = maskCanvasRef.current
+      if (!displayCanvas || !maskCanvas) return
 
-      dctx.save()
-      dctx.globalCompositeOperation = displayComposite
-      dctx.strokeStyle = 'rgba(14, 165, 233, 0.65)'
-      dctx.lineWidth = brushSize
-      dctx.lineCap = 'round'
-      dctx.lineJoin = 'round'
-      dctx.shadowColor = 'rgba(14, 165, 233, 0.35)'
-      dctx.shadowBlur = brushSize / 2
-      dctx.beginPath()
-      dctx.moveTo(from.x, from.y)
-      dctx.lineTo(to.x, to.y)
-      dctx.stroke()
-      dctx.restore()
+      const scaleX = maskCanvas.width / displayCanvas.width
+      const scaleY = maskCanvas.height / displayCanvas.height
+      const composite = mode === 'draw' ? 'source-over' : 'destination-out'
 
       mctx.save()
-      mctx.globalCompositeOperation = maskComposite
+      mctx.globalCompositeOperation = composite
       mctx.strokeStyle = 'white'
-      mctx.lineWidth = brushSize
+      mctx.lineWidth = brushSize * ((scaleX + scaleY) / 2)
       mctx.lineCap = 'round'
       mctx.lineJoin = 'round'
       mctx.beginPath()
-      mctx.moveTo(from.x, from.y)
-      mctx.lineTo(to.x, to.y)
+      mctx.moveTo(from.x * scaleX, from.y * scaleY)
+      mctx.lineTo(to.x * scaleX, to.y * scaleY)
       mctx.stroke()
       mctx.restore()
+
+      renderDisplay()
     },
-    [brushSize, mode]
+    [brushSize, mode, renderDisplay]
   )
 
   const paintSegment = useCallback(
     (from: { x: number; y: number }, to: { x: number; y: number }) => {
-      if (!maskCanvasRef.current || !canvasRef.current) return
-      const dctx = canvasRef.current.getContext('2d')!
+      if (!maskCanvasRef.current) return
       const mctx = maskCanvasRef.current.getContext('2d')!
-      applyStroke(dctx, mctx, from, to)
+      applyStroke(mctx, from, to)
       onMaskChange(maskCanvasRef.current)
       if (!hasDrawn) setHasDrawn(true)
     },
@@ -147,30 +161,11 @@ export default function MaskEditor({ imageUrl, onMaskChange }: Props) {
   const clearMask = useCallback(() => {
     if (!maskCanvasRef.current) return
     const mctx = maskCanvasRef.current.getContext('2d')!
-    mctx.clearRect(0, 0, 512, 512)
-
-    const displayCanvas = canvasRef.current!
-    const dctx = displayCanvas.getContext('2d')!
-    dctx.clearRect(0, 0, displayCanvas.width, displayCanvas.height)
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => {
-      const srcAspect = img.width / img.height
-      let sx = 0, sy = 0, sw = img.width, sh = img.height
-      if (srcAspect > 1) {
-        sw = img.height
-        sx = (img.width - sw) / 2
-      } else {
-        sh = img.width
-        sy = (img.height - sh) / 2
-      }
-      dctx.drawImage(img, sx, sy, sw, sh, 0, 0, displayCanvas.width, displayCanvas.height)
-    }
-    img.src = imageUrl
-
+    mctx.clearRect(0, 0, maskCanvasRef.current.width, maskCanvasRef.current.height)
+    renderDisplay()
     onMaskChange(maskCanvasRef.current)
     setHasDrawn(false)
-  }, [imageUrl, onMaskChange])
+  }, [onMaskChange, renderDisplay])
 
   const cursorSize = Math.max(12, brushSize / 4)
 
