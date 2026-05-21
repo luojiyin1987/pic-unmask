@@ -1,0 +1,27 @@
+{
+  "name": "migan-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "sync:ort": "node scripts/sync-ort-wasm.mjs",
+    "dev": "npm run sync:ort && vite",
+    "build": "npm run sync:ort && tsc && vite build",
+    "preview": "vite preview",
+    "pages:dev": "wrangler pages dev dist",
+    "pages:deploy": "wrangler pages deploy dist"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.18.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.66",
+    "@types/react-dom": "^18.2.22",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.2.2",
+    "vite": "^5.2.0",
+    "wrangler": "^3.0.0"
+  }
+}
