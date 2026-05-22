@@ -76,8 +76,13 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
     }
   }, [updateSlider])
 
-  const startDrag = useCallback(() => {
+  const startDrag = useCallback((e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) => {
+    e.preventDefault()
     isDragging.current = true
+  }, [])
+
+  const preventDrag = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
   }, [])
 
   if (!resultUrl && !originalUrl) {
@@ -146,16 +151,17 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
                 ref={containerRef}
                 onMouseDown={startDrag}
                 onTouchStart={startDrag}
+                onDragStart={preventDrag}
               >
                 {/* Background: original (before) */}
-                <img src={originalUrl} alt="original" className="compare-base" />
+                <img src={originalUrl} alt="original" className="compare-base" draggable={false} />
                 {/* Overlay: result (after) — clipped by slider position */}
                 <div
                   ref={overlayRef}
                   className="compare-overlay"
                   style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)`, willChange: 'clip-path' }}
                 >
-                  <img src={resultUrl} alt="result" className="compare-top" />
+                  <img src={resultUrl} alt="result" className="compare-top" draggable={false} />
                 </div>
                 {/* Draggable slider line */}
                 <div ref={sliderRef} className="compare-slider" style={{ left: `${sliderPos}%`, willChange: 'left' }} />
