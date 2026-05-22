@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { useI18n } from '../lib/I18nContext'
 
 interface Props {
@@ -11,33 +11,72 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
   const [showOriginal, setShowOriginal] = useState(false)
   const [sliderPos, setSliderPos] = useState(50)
   const containerRef = useRef<HTMLDivElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const sliderRef = useRef<HTMLDivElement>(null)
   const isDragging = useRef(false)
+  const rafId = useRef<number>(0)
 
-  const handleMouseDown = useCallback(() => {
-    isDragging.current = true
-  }, [])
-
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false
-  }, [])
-
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDragging.current || !containerRef.current) return
-    const rect = containerRef.current.getBoundingClientRect()
-    const x = e.clientX - rect.left
-    const pct = Math.max(0, Math.min(100, (x / rect.width) * 100))
-    setSliderPos(pct)
-  }, [])
-
-  const handleTouchMove = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+  const updateSlider = useCallback((clientX: number) => {
     if (!containerRef.current) return
     const rect = containerRef.current.getBoundingClientRect()
-    const x = e.touches[0].clientX - rect.left
+    const x = clientX - rect.left
     const pct = Math.max(0, Math.min(100, (x / rect.width) * 100))
-    setSliderPos(pct)
+
+    // Direct DOM manipulation — no React re-render during drag
+    if (overlayRef.current) {
+      overlayRef.current.style.clipPath = `inset(0 ${100 - pct}% 0 0)`
+    }
+    if (sliderRef.current) {
+      sliderRef.current.style.left = `${pct}%`
+    }
+    return pct
   }, [])
 
-  const handleTouchStart = useCallback(() => {
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current) return
+      e.preventDefault()
+      if (rafId.current) cancelAnimationFrame(rafId.current)
+      rafId.current = requestAnimationFrame(() => updateSlider(e.clientX))
+    }
+    const onUp = () => {
+      if (!isDragging.current) return
+      isDragging.current = false
+      // Sync final position back to React state
+      if (containerRef.current && sliderRef.current) {
+        const left = sliderRef.current.style.left
+        if (left) setSliderPos(parseFloat(left))
+      }
+    }
+    const onTouchMove = (e: TouchEvent) => {
+      if (!isDragging.current) return
+      e.preventDefault()
+      if (rafId.current) cancelAnimationFrame(rafId.current)
+      rafId.current = requestAnimationFrame(() => updateSlider(e.touches[0].clientX))
+    }
+    const onTouchEnd = () => {
+      if (!isDragging.current) return
+      isDragging.current = false
+      if (sliderRef.current) {
+        const left = sliderRef.current.style.left
+        if (left) setSliderPos(parseFloat(left))
+      }
+    }
+
+    document.addEventListener('mousemove', onMove, { passive: false })
+    document.addEventListener('mouseup', onUp)
+    document.addEventListener('touchmove', onTouchMove, { passive: false })
+    document.addEventListener('touchend', onTouchEnd)
+    return () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.removeEventListener('touchmove', onTouchMove)
+      document.removeEventListener('touchend', onTouchEnd)
+      if (rafId.current) cancelAnimationFrame(rafId.current)
+    }
+  }, [updateSlider])
+
+  const startDrag = useCallback(() => {
     isDragging.current = true
   }, [])
 
@@ -105,24 +144,21 @@ export default function ResultViewer({ resultUrl, originalUrl }: Props) {
               <div
                 className="compare-container"
                 ref={containerRef}
-                onMouseDown={handleMouseDown}
-                onMouseUp={handleMouseUp}
-                onMouseLeave={handleMouseUp}
-                onMouseMove={handleMouseMove}
-                onTouchStart={handleTouchStart}
-                onTouchMove={handleTouchMove}
+                onMouseDown={startDrag}
+                onTouchStart={startDrag}
               >
                 {/* Background: original (before) */}
                 <img src={originalUrl} alt="original" className="compare-base" />
                 {/* Overlay: result (after) — clipped by slider position */}
                 <div
+                  ref={overlayRef}
                   className="compare-overlay"
-                  style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+                  style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)`, willChange: 'clip-path' }}
                 >
                   <img src={resultUrl} alt="result" className="compare-top" />
                 </div>
                 {/* Draggable slider line */}
-                <div className="compare-slider" style={{ left: `${sliderPos}%` }} />
+                <div ref={sliderRef} className="compare-slider" style={{ left: `${sliderPos}%`, willChange: 'left' }} />
                 <div className="compare-label compare-label-before">{t('before')}</div>
                 <div className="compare-label compare-label-after">{t('after')}</div>
               </div>
