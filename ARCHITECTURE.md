@@ -1,124 +1,251 @@
-# MIGAN Web Inpainting — Cloudflare Pages 部署架构
+# MIGAN Web Inpainting Architecture
 
-## 1. 架构概览
+## 1. Overview
 
-```
-User Browser
+This project is a browser-only image inpainting app built with React, Vite, and `onnxruntime-web`, then deployed as a static site on Cloudflare Pages.
+
+The key architectural constraint is simple:
+
+- User images must stay in the browser.
+- Model inference must run locally on the client device.
+- Cloudflare Pages is only responsible for serving static assets.
+
+At runtime, the app performs local preprocessing on the main thread, runs ONNX inference inside a Web Worker, and composites the generated patch back onto the original full-resolution image in the browser.
+
+## 2. Runtime Topology
+
+```text
+Browser
 │
-├─ Cloudflare Pages (React/Vite SPA)
-│  ├─ UI: Upload / Mask Editor / Result Preview
-│  ├─ Image Preprocess (mask-guided crop → 512×512 inference patch)
-│  ├─ Mask Editor (Canvas-based brush / polygon)
-│  └─ WebWorker (inference.js)
-│     └─ ONNX Runtime Web
-│         ├─ WebGPU (preferred, compute-intensive)
-│         └─ WASM fallback (CPU)
+├─ React SPA
+│  ├─ UploadPanel        -> accepts local image file
+│  ├─ MaskEditor         -> keeps editable full-resolution mask
+│  ├─ ResultViewer       -> compare/download final result
+│  └─ App                -> orchestrates workflow and worker messaging
 │
-└─ Cloudflare R2 / CDN
-   ├─ migan_pipeline_v2.onnx (model, ~29.5 MiB)
-   ├─ ort-wasm-simd.wasm
-   ├─ ort-wasm-simd-threaded.wasm
-   ├─ ort-wasm-simd.jsep.wasm
-   └─ ort.webgpu.min.js / ort.min.js
+├─ Main-thread image pipeline
+│  └─ src/lib/preprocess.ts
+│     ├─ load original image
+│     ├─ find mask bounds
+│     ├─ expand to square crop with padding
+│     ├─ resize crop to 512x512
+│     └─ pack RGB image bytes + binary mask bytes
+│
+├─ Web Worker
+│  └─ src/workers/inference.worker.ts
+│     ├─ detect backend: WebGPU -> WebNN -> WASM
+│     ├─ download/cache ONNX model
+│     ├─ configure ORT WASM asset URLs
+│     ├─ adapt inputs to model metadata
+│     ├─ run inference
+│     └─ convert output tensor to ImageData
+│
+└─ Static asset hosts
+   ├─ Cloudflare Pages   -> app bundle, headers, HTML/CSS/JS
+   ├─ Hugging Face / R2  -> ONNX model URL
+   └─ jsDelivr / unpkg   -> ORT WASM runtime assets
 ```
 
-## 2. 关键技术决策
+## 3. Module Map
 
-| 决策项 | 选型 | 理由 |
-|--------|------|------|
-| 前端框架 | React 18 + Vite 5 | 构建快、Tree-shaking 好、Pages 原生支持 |
-| 推理后端 | onnxruntime-web 1.17+ | 官方支持 WebGPU / WASM / WebNN |
-| 执行后端优先级 | WebGPU → WASM SIMD threaded | WebGPU 对 Conv/TransposeConv 收益巨大；WASM 保底 |
-| 数据类型 | fp16 | 模型体积减半，WebGPU 原生支持 fp16 storage |
-| 输入尺寸 | 512×512 patch (固定) | 模型仍吃固定 patch，但只对 mask 局部区域推理，输出再贴回原图 |
-| 模型加载 | R2 Custom Domain / CDN | Pages Function 有 50MB limit，大模型走 R2 + 签名 URL |
-| 线程隔离 | 必须 WebWorker | 避免阻塞主线程；WASM 多线程需在 Worker 中启用 |
+### Entry and shell
 
-## 3. 目录结构
+- [src/main.tsx](/home/luo/devOps/pic-unmask/src/main.tsx): mounts the app and wraps it with `I18nProvider`.
+- [src/App.tsx](/home/luo/devOps/pic-unmask/src/App.tsx): owns the user workflow state, worker lifecycle, status text, language switch, and step-based UI.
+- [src/index.css](/home/luo/devOps/pic-unmask/src/index.css): global design tokens and shared visual primitives.
 
-```
-.
-├── public/
-│   ├── _headers                 # Pages 静态响应头
-│   └── models/                  # 可选：本地调试用模型占位目录
-├── src/
-│   ├── components/
-│   │   ├── UploadPanel.tsx
-│   │   ├── MaskEditor.tsx
-│   │   └── ResultViewer.tsx
-│   ├── workers/
-│   │   └── inference.worker.ts   # ONNX Runtime 推理 Worker
-│   ├── lib/
-│   │   ├── preprocess.ts         # Mask-guided crop / patch compose
-│   │   ├── postprocess.ts        # Tensor → Image
-│   │   └── ort-env.ts            # ORT backend 初始化与环境配置
-│   └── App.tsx
-├── index.html
-├── vite.config.ts
-├── wrangler.toml                 # Pages 项目配置
-└── package.json
-```
+### UI components
 
-## 4. 模型加载策略
+- [src/components/UploadPanel.tsx](/home/luo/devOps/pic-unmask/src/components/UploadPanel.tsx): drag-and-drop or click upload; converts a local file to an object URL.
+- [src/components/MaskEditor.tsx](/home/luo/devOps/pic-unmask/src/components/MaskEditor.tsx): renders a scaled preview canvas, maintains a separate full-resolution offscreen mask canvas, and supports draw/erase/clear.
+- [src/components/ResultViewer.tsx](/home/luo/devOps/pic-unmask/src/components/ResultViewer.tsx): shows the result, before/after comparison slider, and download action.
 
-Cloudflare Pages 的免费/Pro 计划对单个文件大小有限制（通过 Functions 请求也受 CPU/Memory 限制）。MIGAN FP16 ONNX 模型可能 50MB-150MB，因此：
+### Processing and runtime helpers
 
-1. **默认从 Hugging Face 公开直链加载模型**，零额外托管配置即可部署。
-2. **大于 25 MiB 的模型可放 R2 bucket**，通过 Custom Domain 或 Public Access 提供。
-3. **应用启动后懒加载模型**，可通过 `VITE_MODEL_URL` 切换到 Hugging Face、R2 或自有 CDN。
-4. **ORT WASM 文件默认从公网 CDN 加载**，优先 `jsDelivr`，失败时回退 `unpkg`，并在 Worker 中用 `ort.env.wasm.wasmPaths` 显式指定。
+- [src/lib/preprocess.ts](/home/luo/devOps/pic-unmask/src/lib/preprocess.ts): main-thread image loading, crop computation, mask dilation, inference input packing, and final patch compositing.
+- [src/lib/ort-env.ts](/home/luo/devOps/pic-unmask/src/lib/ort-env.ts): backend detection helper for `webgpu`, `webnn`, and `wasm`.
+- [src/lib/postprocess.ts](/home/luo/devOps/pic-unmask/src/lib/postprocess.ts): generic tensor-to-image helper. Current worker code performs its own output conversion and does not depend on this helper.
+- [src/lib/i18n.ts](/home/luo/devOps/pic-unmask/src/lib/i18n.ts) and [src/lib/I18nContext.tsx](/home/luo/devOps/pic-unmask/src/lib/I18nContext.tsx): bilingual text dictionary and persisted language selection.
 
-## 5. 输入输出规范 (512×512 patch)
+### Worker
 
-- **输入图像**：用户上传任意尺寸图片，编辑器按原图比例显示，并在原图坐标系上保存 mask。
-- **Crop-region inference**：根据 mask 包围盒计算带上下文的 square crop，将该局部区域 resize 到 512×512 做推理。
-- **Mask**：推理前将 crop 内 mask resize 到 512×512，二值化，并做 4px 膨胀处理。
-- **ONNX Input**（Worker 会根据模型元数据自动适配）：
-  - **官方 MI-GAN ONNX pipeline**：`image` 为 `uint8` RGB，`mask` 为 `uint8` Grayscale
-  - **传统双输入网络**：`image` 为 `float16/float32 [1,3,H,W]`，`mask` 为 `float16/float32 [1,1,H,W]`
-  - **单输入网络**：自动将图像与 mask 拼成 4 通道输入
-- **ONNX Output**：
-  - 支持 `float16` / `float32` / `uint8` 输出
-  - 输出 layout 支持 NCHW (`[1,3,H,W]`)、NHWC (`[1,H,W,3]`) 或 CHW (`[3,H,W]`)
-  - 反归一化后 → Canvas → PNG/DataURL
+- [src/workers/inference.worker.ts](/home/luo/devOps/pic-unmask/src/workers/inference.worker.ts): the inference boundary. It owns model caching, ORT initialization, tensor adaptation, execution provider fallback, session reuse, and output decoding.
 
-## 6. WebWorker 职责
+### Deployment config
 
-主线程与 Worker 通过 `postMessage` 通信：
+- [vite.config.ts](/home/luo/devOps/pic-unmask/vite.config.ts): Vite build target, relative base path, dev headers for cross-origin isolation, and worker output format.
+- [public/_headers](/home/luo/devOps/pic-unmask/public/_headers): Cloudflare Pages response headers needed for isolation and caching.
+- [wrangler.toml](/home/luo/devOps/pic-unmask/wrangler.toml): Pages project metadata.
 
-```
-Main → Worker: { type: 'INFER', imageTensor: Float32Array, maskTensor: Float32Array }
-Worker → Main: { type: 'RESULT', imageData: ImageData } | { type: 'ERROR', message: string }
-```
+## 4. End-to-End Flow
 
-Worker 内完成：
-1. `ort.env.wasm.numThreads = navigator.hardwareConcurrency` (WASM 多线程)
-2. `ort.InferenceSession.create(url, { executionProviders: ['webgpu', 'wasm'] })`
-3. 构造 `ort.Tensor` → `session.run({ image, mask })` → 返回结果
+### 4.1 Upload
 
-## 7. WebGPU 与 Fallback
+1. The user selects an image in `UploadPanel`.
+2. The file is converted into a local object URL.
+3. `App` stores the URL and resets any prior result state.
 
-- **检测**: `navigator.gpu ? 'webgpu' : 'wasm'`
-- **ONNX Runtime 配置**:
-  - `executionProviders: ['webgpu', 'wasm']`（自动 fallback）
-  - WebGPU 模式下 FP16 计算/存储路径最优
-- **WASM 优化**: 启用 SIMD + Multi-thread (`ort-wasm-simd-threaded.wasm`)
+### 4.2 Mask authoring
 
-## 8. Pages 部署配置
+1. `MaskEditor` loads the original image.
+2. It creates:
+   - one display canvas scaled down for interaction
+   - one offscreen mask canvas at original image resolution
+3. Brush strokes drawn on the display canvas are mapped back to the full-resolution mask canvas.
+4. The full-resolution mask canvas is passed back to `App`.
 
-- 使用 `wrangler pages project create` 或直接 Git 集成。
-- `vite.config.ts` 中需配置 `base: './'` 或具体路径，确保相对路径正确。
-- WASM 文件默认不随 Pages 产物发布，而是通过 CDN 提供；Vite 的 `assetsInlineLimit` 设为 0 避免意外内联大资源。
+### 4.3 Preprocess
 
-## 9. 安全与性能
+When the user clicks Run:
 
-- **CORS**: 如果模型放在 R2 Custom Domain，需允许 Pages domain 的 `cross-origin` 请求。
-- **Cache-Control**: R2 上的模型和 WASM 设置长期缓存（immutable）。
-- **内存**: WebGPU 推理时 GPU buffer 占用仍主要由 512×512 patch 决定，显存压力可控；主线程额外承担一次原图回贴。
-- **降级提示**: WebGPU 不可用时给出 UI 提示“正在使用 CPU 模式，速度较慢”。
+1. `prepareInferenceInputs()` loads the original image again.
+2. It scans the mask alpha channel to find the masked bounding box.
+3. It expands that region to a square crop using:
+   - a minimum padding of `32px`
+   - a relative padding ratio of `25%`
+4. It renders both image crop and mask crop to fixed `512x512` canvases.
+5. It packs:
+   - RGB image bytes into `Uint8Array`
+   - binary mask values into `Uint8Array`
+6. It dilates the mask by radius `4` to give the model more context around the edited edge.
 
-## 10. 后续扩展
+### 4.4 Worker inference
 
-- Dynamic shape: 导出多分辨率 ONNX (256/512/1024) 或支持 dynamic axes，减少当前固定 patch 对极大/极小区域的折中。
-- WebNN: 待 ONNX Runtime Web 的 WebNN backend 成熟后可加入 `['webnn', 'webgpu', 'wasm']`。
-- Tile-based inference: 对于 2048+ 大图分块推理。
+1. `App` transfers the packed `ArrayBuffer`s to the worker.
+2. The worker detects execution providers with this preference:
+   - `webgpu`
+   - `webnn`
+   - `wasm`
+3. The worker downloads the ONNX model, then caches it using the browser Cache API.
+4. It configures ORT WASM runtime URLs from:
+   - `VITE_WASM_BASE_URL` or the default jsDelivr path
+   - `unpkg` as fallback
+5. It reuses the existing `InferenceSession` as long as `modelUrl` does not change.
+6. It inspects model metadata and adapts inputs dynamically.
+
+Supported input shapes/types:
+
+- Two-input `uint8` models, such as the MI-GAN pipeline variant.
+- Two-input `float16` / `float32` models with separate image and mask tensors.
+- One-input 4-channel models, where RGB + mask are concatenated.
+
+### 4.5 Postprocess and compose
+
+1. The worker converts the first output tensor into `ImageData`.
+2. `App` receives the patch result.
+3. `composeResultImage()` pastes the generated patch back into the original full-resolution image.
+4. The final image is exported as a PNG data URL for preview and download.
+
+## 5. Data and State Boundaries
+
+### Main thread responsibilities
+
+- User interaction
+- Upload state
+- Mask editing
+- Crop preparation
+- Final compositing
+- Status rendering and localization
+
+### Worker responsibilities
+
+- Model loading
+- Model caching
+- Runtime backend selection
+- Tensor creation and format adaptation
+- ONNX inference execution
+- Output tensor decoding
+
+### Why this split exists
+
+- Inference is compute-heavy and must not block pointer input or rendering.
+- WASM multi-threading and large model initialization are better isolated in a worker.
+- The main thread still needs DOM/canvas access for file handling, crop extraction, and result compositing.
+
+## 6. Key Design Decisions
+
+| Area | Current design | Reason |
+| --- | --- | --- |
+| Hosting | Static SPA on Cloudflare Pages | No server-side inference required |
+| Privacy model | Entirely local image processing | Avoids image upload and reduces backend scope |
+| Inference granularity | Fixed `512x512` local crop patch | Preserves output resolution while bounding inference cost |
+| Worker usage | Dedicated module worker | Keeps UI responsive and isolates runtime setup |
+| Backend fallback | `webgpu -> webnn -> wasm` | Prefer acceleration, keep CPU fallback |
+| Model loading | Remote URL via env override | Decouples app deploy from model hosting choice |
+| ORT WASM assets | External CDN with fallback | Avoids shipping oversized runtime assets on Pages |
+| Model reuse | Session cached per `modelUrl` | Avoids repeated initialization during a session |
+| Localization | In-app dictionary, localStorage persistence | Minimal dependency surface for bilingual UI |
+
+## 7. Deployment Architecture
+
+This app is not a Cloudflare Worker inference service. Cloudflare Pages only serves the frontend bundle.
+
+### Required static hosting behavior
+
+- `base: './'` in Vite so the build works under Pages paths.
+- Cross-origin isolation headers in both local dev and deployed Pages responses:
+  - `Cross-Origin-Embedder-Policy: require-corp`
+  - `Cross-Origin-Opener-Policy: same-origin`
+- Immutable caching for built assets.
+
+### External asset expectations
+
+- The ONNX model must be reachable by the browser with valid CORS.
+- ORT WASM files must match the exact `onnxruntime-web` package version used by the app.
+- If Cloudflare Pages cannot host a file because of asset-size limits, that file must remain external.
+
+## 8. Configuration Surface
+
+Build-time environment variables:
+
+- `VITE_MODEL_URL`
+  - Overrides the default Hugging Face model URL.
+  - Can point to Hugging Face, R2, or any other CDN/static host.
+
+- `VITE_WASM_BASE_URL`
+  - Overrides the primary ONNX Runtime WASM base URL.
+  - Must contain artifacts compatible with the app's `onnxruntime-web` version.
+
+Hardcoded defaults currently live in [src/App.tsx](/home/luo/devOps/pic-unmask/src/App.tsx) and [src/workers/inference.worker.ts](/home/luo/devOps/pic-unmask/src/workers/inference.worker.ts), so version bumps need coordinated updates.
+
+## 9. Current Constraints and Risks
+
+### Browser/runtime constraints
+
+- WebGPU support varies by browser and device.
+- WASM fallback is slower and still depends on cross-origin isolation for threaded execution.
+- Large models and large images can increase memory pressure on weaker devices.
+
+### Deployment constraints
+
+- Cloudflare Pages is suitable here because inference never runs on the server.
+- Large ONNX models and ORT runtime artifacts may exceed Pages static asset limits, so remote hosting remains part of the architecture.
+
+### Code-level constraints
+
+- `src/lib/postprocess.ts` is currently not on the main runtime path.
+- Worker status strings are emitted directly in English, while app UI strings go through i18n.
+- The current comparison between original and result is patch-composited PNG output, not a layer-preserving editable project state.
+
+## 10. Extension Points
+
+Reasonable next steps within the current architecture:
+
+- Support touch drawing in `MaskEditor` for mobile/tablet workflows.
+- Move more status messages through i18n for consistent localization.
+- Add multi-model selection if several ONNX variants need to be tested.
+- Add persistent model warm-up and backend diagnostics UI.
+- Add tile-based or dynamic-shape inference for extremely large masked regions.
+- Consolidate worker output decoding with `src/lib/postprocess.ts` if shared conversion logic becomes desirable.
+
+## 11. Architecture Summary
+
+The actual architecture is a client-side inpainting pipeline, not a server-assisted image service:
+
+- React owns workflow and presentation.
+- Canvas utilities own crop extraction and patch compositing.
+- A dedicated worker owns ONNX Runtime and model execution.
+- Cloudflare Pages only hosts the static application shell.
+- The model and ORT runtime are treated as externally addressable dependencies that can be swapped via environment variables.
+
+That separation keeps the app private-by-default, cheap to host, and portable across different model hosting setups without changing the UI architecture.
